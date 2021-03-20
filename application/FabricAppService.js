@@ -12,6 +12,7 @@
 const fs = require('fs');
 const path = require('path');
 const chalk = require('chalk');
+const assert = require('assert');
 
 const { Gateway, Wallets } = require('fabric-network');
 const FabricCAServices = require('fabric-ca-client');
@@ -40,34 +41,36 @@ class FabricAppService {
 
     async setGateway(channelName = "", chaincode = "", contractName = "") {
         try {
-            // load the network configuration
-            const ccpPath = path.resolve(FabricAppService.getNetworkDir(), 'organizations', 'peerOrganizations', 'org1.example.com', 'connection-org1.json');
-            console.log({ ccpPath });
-            const ccp = JSON.parse(fs.readFileSync(ccpPath, 'utf8'));
+            if (!this._gateway) {
+                // load the network configuration
+                const ccpPath = path.resolve(FabricAppService.getNetworkDir(), 'organizations', 'peerOrganizations', 'org1.example.com', 'connection-org1.json');
+                console.log({ ccpPath });
+                const ccp = JSON.parse(fs.readFileSync(ccpPath, 'utf8'));
 
-            const wallet = await Wallets.newFileSystemWallet(FabricAppService.walletPath);
-            console.log({ walletPath: FabricAppService.walletPath });
+                const wallet = await Wallets.newFileSystemWallet(FabricAppService.walletPath);
+                console.log({ walletPath: FabricAppService.walletPath });
 
-            // Check to see if we've already enrolled the user.
-            let appUser = FabricAppService.org1UserId;
-            const identity = await wallet.get(appUser);
-            if (!identity) {
-                const message = `An identity for the user ${appUser} does not exist in the wallet`;
-                console.log(message);
-                throw message;
+                // Check to see if we've already enrolled the user.
+                let appUser = FabricAppService.org1UserId;
+                const identity = await wallet.get(appUser);
+                if (!identity) {
+                    const message = `An identity for the user ${appUser} does not exist in the wallet`;
+                    console.log(message);
+                    throw message;
+                }    
+                // Create a new gateway for connecting to our peer node.
+                this._gateway = new Gateway();
+
+                await this._gateway.connect(ccp, { wallet, identity: FabricAppService.org1UserId, discovery: { enabled: true, asLocalhost: true } })
+                this.isConnected = true;
+                console.log("Gateway connected");
             }
 
-            // Create a new gateway for connecting to our peer node.
-            this._gateway = new Gateway();
-            await this._gateway.connect(ccp, { wallet, identity: FabricAppService.org1UserId, discovery: { enabled: true, asLocalhost: true } })
-            this.isConnected = true;
-            
             if (channelName) {
                 await this.setNetwork(channelName);
                 if (chaincode)
                     await this.setContract(chaincode, contractName);
             }
-            console.log("Gateway connected");
         }
         catch (error) {
             console.error(error);
@@ -90,17 +93,38 @@ class FabricAppService {
         return network.instance;
     }
 
-    getNetwork(index = 0) {
-        return this._networks[index] && this._networks[index].instance;
+    getNetwork(networkIndex = 0) {
+        let network = this._networks[networkIndex];
+        return network && network.instance;
     }
 
-    async setContract(chaincode = 'ttcar', contractName = "") {
+    async setContract(chaincode = 'ttcar', contractName = "", allInOne = 0) {
         if (!this.isConnected) throw new Error('Not connected!');
         if (!this._networks.length) throw new Error("No network available!");
 
         let contract = this._contracts.find(ct => ct.chaincode === chaincode && ct.contractName === contractName);
         if (!contract) {
-            const network = this._networks[0].instance;
+            let network = null;
+            //console.log(allInOne, typeof allInOne, isNaN(allInOne));
+            if (typeof allInOne === 'object') { // network
+                network = allInOne;
+            }
+            else if (typeof allInOne === 'string' && isNaN(allInOne)) { // Channel name
+                let findNetwork = null;
+                if (allInOne === 'latest') {
+                    findNetwork = this._networks[this._networks.length - 1];
+                } 
+                else {    
+                    findNetwork = this._networks.find(nk => nk.channel === allInOne);
+                }
+                network = findNetwork.instance;
+            }
+            else { // index
+                let networkIndex = Number(allInOne);
+                network = this._networks[networkIndex].instance;
+            }
+            assert.ok(network);
+
             // Get the contract from the network.
             let instance = null;
             if (contractName)
@@ -113,16 +137,21 @@ class FabricAppService {
         return contract.instance;
     };
 
-    getContract(index = 0) {
-        return this._contracts[index] && this._contracts[index].instance;
+    getContract(indexOrLatest = 0) {
+        let contract = null;
+        if (typeof indexOrLatest === 'number')
+            contract = this._contracts[indexOrLatest];
+        else
+            contract = this._contracts[this._contracts - 1]; 
+        return contract && contract.instance || null;
     }
 
-    async queryTrans(transFunc = 'queryCar', args = []) {
+    async queryTrans(transFunc = 'queryCar', args = [], contractIndex = 0) {
         if (!this._contracts.length) throw new Error("No contract set yet!");
 
         const callArgs = [ transFunc, ...args ];
         //console.log("callArgs: ", callArgs);
-        const contract = this.getContract(0);
+        const contract = this.getContract(contractIndex);
         //console.log(contract);
         let result = await contract.evaluateTransaction(...callArgs);
         //const result = await contract.evaluateTransaction('queryAllCars');
@@ -452,13 +481,41 @@ class FabricAppService {
             console.log(chalk.green("sampleApp2 is done"));
         }
     }
+
+    static async sampleApp3() {
+        console.log(chalk.green("sampleApp3 starts"));
+        try {
+            let app = await FabricAppService.applicationOne('ttchannel2', 'tttask', 'org.ttdata.assettask');
+            let result = await app.fabricApp.muteTrans('CreateTask', ['Task-12', 'Test Task', 'Test', false, 'Simon']);
+            console.log("Add one task");
+            result = await app.fabricApp.queryTrans('ReadTask', [ 'Task-12' ]);
+            let obj = JSON.parse(result);
+            console.log('Task query result: ', obj);
+
+            //app = await FabricAppService.applicationOne('ttchannel', 'ttcar', 'org.ttdata.ttcar');
+            let network = await app.fabricApp.setNetwork('ttchannel');
+            await app.fabricApp.setContract('ttcar', 'org.ttdata.ttcar', network); // 'latest', 'ttchannel', 1;
+            result = await app.fabricApp.queryTrans('queryCar', [ 'CAR4' ], 1); // second contract
+            console.log('Car query result: ', JSON.parse(result));
+
+            await app.fabricApp.disconnect();
+        }
+        catch (error) {
+            console.error(`Error: ${error}`);
+            throw error;
+        }
+        finally {
+            console.log(chalk.green("sampleApp3 is done"));
+        }
+    }
 }
 
 module.exports = { FabricAppService }
 
 if (require.main === module) {
-    FabricAppService.sampleApp1()
+    //FabricAppService.sampleApp1()
     //FabricAppService.sampleApp2()
+    FabricAppService.sampleApp3()
 
     .then()
     .catch(console.error)
