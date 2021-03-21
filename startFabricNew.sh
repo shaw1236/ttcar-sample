@@ -14,16 +14,16 @@ CC_SRC_LANGUAGE=`echo "$CC_SRC_LANGUAGE" | tr [:upper:] [:lower:]`
 CC_SRC_PATH="../ttdata-sample/chaincode/ttdata/javascript/"
 
 # clean out any old identites in the wallets
-rm -rf application/wallet/*
+#rm -rf application/wallet/*
 
 # launch network persistence; create channel and join peer to channel
 pushd ../test-network
-./network.sh down
-./network.sh up createChannel -c ttchannel -ca -s couchdb
-./network.sh createChannel -c ttchannel2 -ca -s couchdb
+./networkNew.sh down
+./networkNew.sh up createChannel -c ttchannel -ca -s couchdb
+./networkNew.sh createChannel -c ttchannel2 -ca -s couchdb
 
-./network.sh deployCC -c ttchannel -ccn ttdata -ccv 1 -cci initLedger -ccl ${CC_SRC_LANGUAGE} -ccp ${CC_SRC_PATH}
-./network.sh deployCC -c ttchannel2 -ccn ttdata -ccv 1 -cci initLedger -ccl ${CC_SRC_LANGUAGE} -ccp ${CC_SRC_PATH}
+./networkNew.sh deployCC -c ttchannel -ccn ttdata -ccv 1 -cci initLedger -ccl ${CC_SRC_LANGUAGE} -ccp ${CC_SRC_PATH}
+./networkNew.sh deployCC -c ttchannel2 -ccn ttdata -ccv 1 -cci initLedger -ccl ${CC_SRC_LANGUAGE} -ccp ${CC_SRC_PATH}
 popd
 
 cat <<EOF

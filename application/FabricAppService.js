@@ -514,8 +514,8 @@ module.exports = { FabricAppService }
 
 if (require.main === module) {
     //FabricAppService.sampleApp1()
-    //FabricAppService.sampleApp2()
-    FabricAppService.sampleApp3()
+    FabricAppService.sampleApp2()
+    //FabricAppService.sampleApp3()
 
     .then()
     .catch(console.error)

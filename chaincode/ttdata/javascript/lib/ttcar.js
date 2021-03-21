@@ -8,6 +8,10 @@
 const { Contract } = require('fabric-contract-api');
 
 class TTCar extends Contract {
+    constructor() {
+        // Unique namespace when multiple contracts per chaincode file
+        super('org.ttdata.ttcar');
+    }
 
     async initLedger(ctx) {
         console.info('============= START : Initialize Ledger ===========');
